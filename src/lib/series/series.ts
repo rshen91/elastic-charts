@@ -62,6 +62,7 @@ export interface DataSeriesColorsValues {
   colorValues: any[];
   lastValue?: any;
   specSortIndex?: number;
+  userCustomSeriesColor?: object | string;
 }
 
 /**
@@ -302,6 +303,7 @@ export function getSplittedSeries(
   for (const [specId, spec] of seriesSpecs) {
     const dataSeries = splitSeries(spec.data, spec, specId);
     let currentRawDataSeries = dataSeries.rawDataSeries;
+    const userCustomSeriesColor = spec.customSeriesColors;
     if (deselectedDataSeries) {
       currentRawDataSeries = dataSeries.rawDataSeries.filter(
         (series): boolean => {
@@ -318,6 +320,7 @@ export function getSplittedSeries(
     splittedSeries.set(specId, currentRawDataSeries);
 
     dataSeries.colorsValues.forEach((colorValues, key) => {
+
       const lastValue = dataSeries.splitSeriesLastValues.get(key);
 
       seriesColors.set(key, {
@@ -325,6 +328,8 @@ export function getSplittedSeries(
         specSortIndex: spec.sortIndex,
         colorValues,
         lastValue,
+        // could add the string from user
+        userCustomSeriesColor,
       });
     });
 
@@ -365,12 +370,10 @@ export function getSeriesColorMap(
 ): Map<string, string> {
   const seriesColorMap = new Map<string, string>();
   let counter = 0;
-
   seriesColors.forEach((value: DataSeriesColorsValues, seriesColorKey: string) => {
     const customSeriesColor: string | undefined = customColors.get(seriesColorKey);
     const color =
       customSeriesColor || chartColors.vizColors[counter % chartColors.vizColors.length];
-
     seriesColorMap.set(seriesColorKey, color);
     counter++;
   });

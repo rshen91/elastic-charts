@@ -584,6 +584,7 @@ export class ChartStore {
     }
   });
 
+  // legend item calls this - not needed for #179 issue
   setSeriesColor = action((legendItemKey: string, color: string) => {
     const legendItem = this.legendItems.get(legendItemKey);
 
@@ -592,7 +593,7 @@ export class ChartStore {
 
       const spec = this.seriesSpecs.get(specId);
       if (spec) {
-        if (spec.customSeriesColors) {
+        if (spec.customSeriesColors && typeof spec.customSeriesColors === 'object') {
           spec.customSeriesColors.set(legendItem.value, color);
         } else {
           const specCustomSeriesColors = new Map();

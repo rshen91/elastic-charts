@@ -99,13 +99,15 @@ export function getUpdatedCustomSeriesColors(
   const updatedCustomSeriesColors = new Map();
   seriesSpecs.forEach((spec: BasicSeriesSpec, id: SpecId) => {
     if (spec.customSeriesColors) {
-      spec.customSeriesColors.forEach(
-        (color: string, seriesColorValues: DataSeriesColorsValues) => {
-          const { colorValues, specId } = seriesColorValues;
-          const seriesLabel = getColorValuesAsString(colorValues, specId);
-          updatedCustomSeriesColors.set(seriesLabel, color);
-        },
-      );
+      if (typeof spec.customSeriesColors === 'object') {
+        spec.customSeriesColors.forEach(
+          (color: string, seriesColorValues: DataSeriesColorsValues) => {
+            const { colorValues, specId } = seriesColorValues;
+            const seriesLabel = getColorValuesAsString(colorValues, specId);
+            updatedCustomSeriesColors.set(seriesLabel, color);
+          },
+        );
+      }
     }
   });
   return updatedCustomSeriesColors;

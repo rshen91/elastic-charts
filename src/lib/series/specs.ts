@@ -58,7 +58,7 @@ export interface SeriesSpec {
   /** The type of series you are looking to render */
   seriesType: 'bar' | 'line' | 'area';
   /** Custom colors for series */
-  customSeriesColors?: CustomSeriesColorsMap;
+  customSeriesColors?: CustomSeriesColorsMap | string;
   /** If the series should appear in the legend
    * @default false
    */

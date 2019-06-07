@@ -428,7 +428,7 @@ storiesOf('Stylings', module)
           xAccessor="x"
           yAccessors={['y1', 'y2']}
           splitSeriesAccessors={['g1', 'g2']}
-          customSeriesColors={barCustomSeriesColors}
+          customSeriesColors="#000" // takes a map or a string
           data={TestDatasets.BARCHART_2Y2G}
         />
         <LineSeries
