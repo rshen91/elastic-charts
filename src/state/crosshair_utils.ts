@@ -122,27 +122,26 @@ export function getTooltipPosition(
   chartRotation: Rotation,
   cursorBandPosition: Dimensions,
   cursorPosition: { x: number; y: number },
-): {
-  transform: string;
-} {
+  isSingleValueXScale: boolean,
+): string {
   const isHorizontalRotated = isHorizontalRotation(chartRotation);
   const hPosition = getHorizontalTooltipPosition(
     cursorPosition.x,
     cursorBandPosition,
     chartDimensions,
     isHorizontalRotated,
+    isSingleValueXScale,
   );
   const vPosition = getVerticalTooltipPosition(
     cursorPosition.y,
     cursorBandPosition,
     chartDimensions,
     isHorizontalRotated,
+    isSingleValueXScale,
   );
   const xTranslation = `translateX(${hPosition.position}px) translateX(-${hPosition.offset}%)`;
   const yTranslation = `translateY(${vPosition.position}px) translateY(-${vPosition.offset}%)`;
-  return {
-    transform: `${xTranslation} ${yTranslation}`,
-  };
+  return `${xTranslation} ${yTranslation}`;
 }
 
 export function getHorizontalTooltipPosition(
@@ -150,9 +149,17 @@ export function getHorizontalTooltipPosition(
   cursorBandPosition: Dimensions,
   chartDimensions: Dimensions,
   isHorizontalRotated: boolean,
+  isSingleValueXScale: boolean,
   padding: number = 20,
 ): { offset: number; position: number } {
   if (isHorizontalRotated) {
+    if (isSingleValueXScale) {
+      return {
+        offset: 0,
+        position: cursorBandPosition.left,
+      };
+    }
+
     if (cursorXPosition <= chartDimensions.width / 2) {
       return {
         offset: 0,
@@ -184,6 +191,7 @@ export function getVerticalTooltipPosition(
   cursorBandPosition: Dimensions,
   chartDimensions: Dimensions,
   isHorizontalRotated: boolean,
+  isSingleValueXScale: boolean,
   padding: number = 20,
 ): {
   offset: number;
@@ -202,6 +210,12 @@ export function getVerticalTooltipPosition(
       };
     }
   } else {
+    if (isSingleValueXScale) {
+      return {
+        offset: 0,
+        position: cursorBandPosition.top,
+      };
+    }
     if (cursorYPosition <= chartDimensions.height / 2) {
       return {
         offset: 0,

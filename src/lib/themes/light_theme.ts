@@ -1,4 +1,4 @@
-import { palettes } from '@elastic/eui';
+import { palettes } from './colors';
 import { Theme } from './theme';
 
 import {
@@ -13,57 +13,46 @@ export const LIGHT_THEME: Theme = {
   chartMargins: DEFAULT_CHART_MARGINS,
   lineSeriesStyle: {
     line: {
-      stroke: DEFAULT_MISSING_COLOR,
-      strokeWidth: 1,
       visible: true,
-    },
-    border: {
-      stroke: 'gray',
-      strokeWidth: 2,
-      visible: false,
+      strokeWidth: 1,
+      opacity: 1,
     },
     point: {
       visible: true,
-      radius: 1,
-      stroke: 'white',
-      strokeWidth: 0.5,
+      strokeWidth: 0,
+      radius: 4,
       opacity: 1,
     },
   },
   areaSeriesStyle: {
     area: {
-      fill: DEFAULT_MISSING_COLOR,
       visible: true,
-      opacity: 0.8,
+      opacity: 1,
     },
     line: {
-      stroke: DEFAULT_MISSING_COLOR,
-      strokeWidth: 1.5,
       visible: true,
-    },
-    border: {
-      stroke: 'gray',
-      strokeWidth: 2,
-      visible: false,
+      strokeWidth: 1,
+      opacity: 1,
     },
     point: {
       visible: true,
-      radius: 1,
-      stroke: 'white',
-      strokeWidth: 0.5,
+      strokeWidth: 0,
+      radius: 4,
       opacity: 1,
     },
   },
   barSeriesStyle: {
-    border: {
-      stroke: 'white',
-      strokeWidth: 1,
+    rect: {
+      opacity: 1,
+    },
+    rectBorder: {
       visible: false,
+      strokeWidth: 0,
     },
     displayValue: {
       fontSize: 10,
       fontStyle: 'normal',
-      fontFamily: `'Open Sans', Helvetica, Arial, sans-serif`,
+      fontFamily: 'sans-serif',
       padding: 0,
       fill: 'gray',
       offsetX: 0,
@@ -73,12 +62,13 @@ export const LIGHT_THEME: Theme = {
   sharedStyle: DEFAULT_GEOMETRY_STYLES,
   scales: {
     barsPadding: 0.25,
+    histogramPadding: 0.05,
   },
   axes: {
     axisTitleStyle: {
       fontSize: 12,
       fontStyle: 'bold',
-      fontFamily: `'Open Sans', Helvetica, Arial, sans-serif`,
+      fontFamily: 'sans-serif',
       padding: 5,
       fill: 'gray',
     },
@@ -88,10 +78,10 @@ export const LIGHT_THEME: Theme = {
     },
     tickLabelStyle: {
       fontSize: 10,
-      fontFamily: `'Open Sans', Helvetica, Arial, sans-serif`,
+      fontFamily: 'sans-serif',
       fontStyle: 'normal',
       fill: 'gray',
-      padding: 0,
+      padding: 1,
     },
     tickLineStyle: {
       stroke: 'gray',
@@ -99,11 +89,11 @@ export const LIGHT_THEME: Theme = {
     },
   },
   colors: {
-    vizColors: palettes.euiPaletteColorBlind.colors,
+    vizColors: palettes.echPaletteColorBlind.colors,
     defaultVizColor: DEFAULT_MISSING_COLOR,
   },
   legend: {
-    verticalWidth: 160,
+    verticalWidth: 200,
     horizontalHeight: 64,
   },
   crosshair: {

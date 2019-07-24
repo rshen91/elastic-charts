@@ -1,14 +1,13 @@
 import { area, line } from 'd3-shape';
-import { mutableIndexedGeometryMapUpsert } from '../../state/utils';
 import { CanvasTextBBoxCalculator } from '../axes/canvas_text_bbox_calculator';
 import {
   AreaSeriesStyle,
   AreaStyle,
-  CustomBarSeriesStyle,
   LineSeriesStyle,
   LineStyle,
   PointStyle,
   SharedGeometryStyle,
+  BarSeriesStyle,
 } from '../themes/theme';
 import { SpecId } from '../utils/ids';
 import { isLogarithmicScale } from '../utils/scales/scale_continuous';
@@ -64,7 +63,7 @@ export interface BarGeometry {
   };
   geometryId: GeometryId;
   value: GeometryValue;
-  seriesStyle?: CustomBarSeriesStyle;
+  seriesStyle: BarSeriesStyle;
 }
 export interface LineGeometry {
   line: string;
@@ -75,8 +74,8 @@ export interface LineGeometry {
     y: number;
   };
   geometryId: GeometryId;
-  seriesLineStyle?: LineStyle;
-  seriesPointStyle?: PointStyle;
+  seriesLineStyle: LineStyle;
+  seriesPointStyle: PointStyle;
 }
 export interface AreaGeometry {
   area: string;
@@ -88,9 +87,9 @@ export interface AreaGeometry {
     y: number;
   };
   geometryId: GeometryId;
-  seriesAreaStyle?: AreaStyle;
-  seriesAreaLineStyle?: LineStyle;
-  seriesPointStyle?: PointStyle;
+  seriesAreaStyle: AreaStyle;
+  seriesAreaLineStyle: LineStyle;
+  seriesPointStyle: PointStyle;
 }
 
 export function isPointGeometry(ig: IndexedGeometry): ig is PointGeometry {
@@ -98,6 +97,20 @@ export function isPointGeometry(ig: IndexedGeometry): ig is PointGeometry {
 }
 export function isBarGeometry(ig: IndexedGeometry): ig is BarGeometry {
   return ig.hasOwnProperty('width') && ig.hasOwnProperty('height');
+}
+
+export function mutableIndexedGeometryMapUpsert(
+  mutableGeometriesIndex: Map<any, IndexedGeometry[]>,
+  key: any,
+  geometry: IndexedGeometry | IndexedGeometry[],
+) {
+  const existing = mutableGeometriesIndex.get(key);
+  const upsertGeometry: IndexedGeometry[] = Array.isArray(geometry) ? geometry : [geometry];
+  if (existing === undefined) {
+    mutableGeometriesIndex.set(key, upsertGeometry);
+  } else {
+    mutableGeometriesIndex.set(key, [...upsertGeometry, ...existing]);
+  }
 }
 
 export function renderPoints(
@@ -182,8 +195,8 @@ export function renderBars(
   color: string,
   specId: SpecId,
   seriesKey: any[],
+  seriesStyle: BarSeriesStyle,
   displayValueSettings?: DisplayValueSpec,
-  seriesStyle?: CustomBarSeriesStyle,
 ): {
   barGeometries: BarGeometry[];
   indexedGeometries: Map<any, IndexedGeometry[]>;
@@ -194,8 +207,11 @@ export function renderBars(
   const barGeometries: BarGeometry[] = [];
 
   const bboxCalculator = new CanvasTextBBoxCalculator();
-  const fontSize = seriesStyle && seriesStyle.displayValue ? seriesStyle.displayValue.fontSize : undefined;
-  const fontFamily = seriesStyle && seriesStyle.displayValue ? seriesStyle.displayValue.fontFamily : undefined;
+
+  // default padding to 1 for now
+  const padding = 1;
+  const fontSize = seriesStyle.displayValue.fontSize;
+  const fontFamily = seriesStyle.displayValue.fontFamily;
 
   dataset.forEach((datum) => {
     const { y0, y1, initialY1 } = datum;
@@ -223,35 +239,44 @@ export function renderBars(
       y = yScale.scale(y1);
       height = yScale.scale(y0) - y;
     }
+
     const x = xScale.scale(datum.x) + xScale.bandwidth * orderIndex;
     const width = xScale.bandwidth;
 
-    const formattedDisplayValue = displayValueSettings && displayValueSettings.valueFormatter ?
-      displayValueSettings.valueFormatter(initialY1) : undefined;
+    const formattedDisplayValue =
+      displayValueSettings && displayValueSettings.valueFormatter
+        ? displayValueSettings.valueFormatter(initialY1)
+        : undefined;
 
     // only show displayValue for even bars if showOverlappingValue
-    const displayValueText = displayValueSettings && displayValueSettings.isAlternatingValueLabel ?
-      (barGeometries.length % 2 === 0 ? formattedDisplayValue : undefined)
-      : formattedDisplayValue;
+    const displayValueText =
+      displayValueSettings && displayValueSettings.isAlternatingValueLabel
+        ? barGeometries.length % 2 === 0
+          ? formattedDisplayValue
+          : undefined
+        : formattedDisplayValue;
 
-    const computedDisplayValueWidth = bboxCalculator.compute(displayValueText || '', fontSize, fontFamily).getOrElse({
-      width: 0,
-      height: 0,
-    }).width;
-    const displayValueWidth = displayValueSettings && displayValueSettings.isValueContainedInElement ?
-      width : computedDisplayValueWidth;
+    const computedDisplayValueWidth = bboxCalculator
+      .compute(displayValueText || '', padding, fontSize, fontFamily)
+      .getOrElse({
+        width: 0,
+        height: 0,
+      }).width;
+    const displayValueWidth =
+      displayValueSettings && displayValueSettings.isValueContainedInElement ? width : computedDisplayValueWidth;
 
     const hideClippedValue = displayValueSettings ? displayValueSettings.hideClippedValue : undefined;
 
-    const displayValue = (displayValueSettings && displayValueSettings.showValueLabel) ?
-      {
-        text: displayValueText,
-        width: displayValueWidth,
-        height: fontSize || 0,
-        hideClippedValue,
-        isValueContainedInElement: displayValueSettings.isValueContainedInElement,
-      }
-      : undefined;
+    const displayValue =
+      displayValueSettings && displayValueSettings.showValueLabel
+        ? {
+            text: displayValueText,
+            width: displayValueWidth,
+            height: fontSize,
+            hideClippedValue,
+            isValueContainedInElement: displayValueSettings.isValueContainedInElement,
+          }
+        : undefined;
 
     const barGeometry: BarGeometry = {
       displayValue,
@@ -293,7 +318,8 @@ export function renderLine(
   specId: SpecId,
   hasY0Accessors: boolean,
   seriesKey: any[],
-  seriesStyle?: LineSeriesStyle,
+  xScaleOffset: number,
+  seriesStyle: LineSeriesStyle,
 ): {
   lineGeometry: LineGeometry;
   indexedGeometries: Map<any, IndexedGeometry[]>;
@@ -301,18 +327,15 @@ export function renderLine(
   const isLogScale = isLogarithmicScale(yScale);
 
   const pathGenerator = line<DataSeriesDatum>()
-    .x((datum: DataSeriesDatum) => xScale.scale(datum.x))
+    .x((datum: DataSeriesDatum) => xScale.scale(datum.x) - xScaleOffset)
     .y((datum: DataSeriesDatum) => yScale.scale(datum.y1))
     .defined((datum: DataSeriesDatum) => datum.y1 !== null && !(isLogScale && datum.y1 <= 0))
     .curve(getCurveFactory(curve));
   const y = 0;
   const x = shift;
 
-  const seriesPointStyle = seriesStyle ? seriesStyle.point : undefined;
-  const seriesLineStyle = seriesStyle ? seriesStyle.line : undefined;
-
   const { pointGeometries, indexedGeometries } = renderPoints(
-    shift,
+    shift - xScaleOffset,
     dataset,
     xScale,
     yScale,
@@ -333,8 +356,8 @@ export function renderLine(
       specId,
       seriesKey,
     },
-    seriesLineStyle,
-    seriesPointStyle,
+    seriesLineStyle: seriesStyle.line,
+    seriesPointStyle: seriesStyle.point,
   };
   return {
     lineGeometry,
@@ -352,7 +375,8 @@ export function renderArea(
   specId: SpecId,
   hasY0Accessors: boolean,
   seriesKey: any[],
-  seriesStyle?: AreaSeriesStyle,
+  xScaleOffset: number,
+  seriesStyle: AreaSeriesStyle,
 ): {
   areaGeometry: AreaGeometry;
   indexedGeometries: Map<any, IndexedGeometry[]>;
@@ -360,7 +384,7 @@ export function renderArea(
   const isLogScale = isLogarithmicScale(yScale);
 
   const pathGenerator = area<DataSeriesDatum>()
-    .x((datum: DataSeriesDatum) => xScale.scale(datum.x))
+    .x((datum: DataSeriesDatum) => xScale.scale(datum.x) - xScaleOffset)
     .y1((datum: DataSeriesDatum) => yScale.scale(datum.y1))
     .y0((datum: DataSeriesDatum) => {
       if (datum.y0 === null || (isLogScale && datum.y0 <= 0)) {
@@ -384,12 +408,8 @@ export function renderArea(
     }
   }
 
-  const seriesPointStyle = seriesStyle ? seriesStyle.point : undefined;
-  const seriesAreaStyle = seriesStyle ? seriesStyle.area : undefined;
-  const seriesAreaLineStyle = seriesStyle ? seriesStyle.line : undefined;
-
   const { pointGeometries, indexedGeometries } = renderPoints(
-    shift,
+    shift - xScaleOffset,
     dataset,
     xScale,
     yScale,
@@ -412,9 +432,9 @@ export function renderArea(
       specId,
       seriesKey,
     },
-    seriesAreaStyle,
-    seriesAreaLineStyle,
-    seriesPointStyle,
+    seriesAreaStyle: seriesStyle.area,
+    seriesAreaLineStyle: seriesStyle.line,
+    seriesPointStyle: seriesStyle.point,
   };
   return {
     areaGeometry,
@@ -429,14 +449,14 @@ export function getGeometryStyle(
   specOpacity?: number,
   individualHighlight?: { [key: string]: boolean },
 ): GeometryStyle {
-
-  const sharedStyle = specOpacity == null ?
-    sharedThemeStyle :
-    {
-      ...sharedThemeStyle,
-      highlighted: { opacity: specOpacity },
-      default: { opacity: specOpacity },
-    };
+  const sharedStyle =
+    specOpacity == null
+      ? sharedThemeStyle
+      : {
+          ...sharedThemeStyle,
+          highlighted: { opacity: specOpacity },
+          default: { opacity: specOpacity },
+        };
 
   if (highlightedLegendItem != null) {
     const isPartOfHighlightedSeries = belongsToDataSeries(geometryId, highlightedLegendItem.value);
@@ -471,7 +491,5 @@ export function isPointOnGeometry(
     );
   }
   const { width, height } = indexedGeometry;
-  return (
-    yCoordinate >= y && yCoordinate <= y + height && xCoordinate >= x && xCoordinate <= x + width
-  );
+  return yCoordinate >= y && yCoordinate <= y + height && xCoordinate >= x && xCoordinate <= x + width;
 }

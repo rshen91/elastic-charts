@@ -1,10 +1,12 @@
 import { XDomain } from '../series/domains/x_domain';
 import { YDomain } from '../series/domains/y_domain';
-import { AxisSpec, DomainRange, Position } from '../series/specs';
+import { AxisSpec, DomainRange, Position, AxisStyle } from '../series/specs';
 import { LIGHT_THEME } from '../themes/light_theme';
-import { getAxisId, getGroupId, GroupId } from '../utils/ids';
+import { AxisId, getAxisId, getGroupId, GroupId } from '../utils/ids';
 import { ScaleType } from '../utils/scales/scales';
 import {
+  AxisTick,
+  AxisTicksDimensions,
   centerRotationOrigin,
   computeAxisGridLinePositions,
   computeAxisTicksDimensions,
@@ -26,6 +28,7 @@ import {
   isVertical,
   isYDomain,
   mergeDomainsByGroupId,
+  getAxisTickLabelPadding,
 } from './axis_utils';
 import { CanvasTextBBoxCalculator } from './canvas_text_bbox_calculator';
 import { SvgTextBBoxCalculator } from './svg_text_bbox_calculator';
@@ -65,8 +68,6 @@ describe('Axis computational utils', () => {
     left: 0,
   };
   const axis1Dims = {
-    axisScaleType: ScaleType.Linear,
-    axisScaleDomain: [0, 1],
     tickValues: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
     tickLabels: ['0', '0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1'],
     maxLabelBboxWidth: 10,
@@ -154,15 +155,7 @@ describe('Axis computational utils', () => {
 
   test('should compute axis dimensions', () => {
     const bboxCalculator = new SvgTextBBoxCalculator();
-    const axisDimensions = computeAxisTicksDimensions(
-      verticalAxisSpec,
-      xDomain,
-      [yDomain],
-      1,
-      bboxCalculator,
-      0,
-      axes,
-    );
+    const axisDimensions = computeAxisTicksDimensions(verticalAxisSpec, xDomain, [yDomain], 1, bboxCalculator, 0, axes);
     expect(axisDimensions).toEqual(axis1Dims);
 
     const computeScalelessSpec = () => {
@@ -178,15 +171,7 @@ describe('Axis computational utils', () => {
   test('should not compute axis dimensions when spec is configured to hide', () => {
     const bboxCalculator = new CanvasTextBBoxCalculator();
     verticalAxisSpec.hide = true;
-    const axisDimensions = computeAxisTicksDimensions(
-      verticalAxisSpec,
-      xDomain,
-      [yDomain],
-      1,
-      bboxCalculator,
-      0,
-      axes,
-    );
+    const axisDimensions = computeAxisTicksDimensions(verticalAxisSpec, xDomain, [yDomain], 1, bboxCalculator, 0, axes);
     expect(axisDimensions).toBe(null);
   });
 
@@ -221,23 +206,90 @@ describe('Axis computational utils', () => {
     expect(xScale).toBeDefined();
   });
 
-  test('should compute available ticks', () => {
-    const scale = getScaleForAxisSpec(verticalAxisSpec, xDomain, [yDomain], 0, 0, 100, 0);
-    const axisPositions = getAvailableTicks(verticalAxisSpec, scale!, 0);
-    const expectedAxisPositions = [
-      { label: '0', position: 100, value: 0 },
-      { label: '0.1', position: 90, value: 0.1 },
-      { label: '0.2', position: 80, value: 0.2 },
-      { label: '0.3', position: 70, value: 0.3 },
-      { label: '0.4', position: 60, value: 0.4 },
-      { label: '0.5', position: 50, value: 0.5 },
-      { label: '0.6', position: 40, value: 0.6 },
-      { label: '0.7', position: 30, value: 0.7 },
-      { label: '0.8', position: 20, value: 0.8 },
-      { label: '0.9', position: 10, value: 0.9 },
-      { label: '1', position: 0, value: 1 },
-    ];
-    expect(axisPositions).toEqual(expectedAxisPositions);
+  describe('getAvailableTicks', () => {
+    test('should compute to end of domain when histogram mode not enabled', () => {
+      const enableHistogramMode = false;
+      const scale = getScaleForAxisSpec(verticalAxisSpec, xDomain, [yDomain], 0, 0, 100, 0);
+      const axisPositions = getAvailableTicks(verticalAxisSpec, scale!, 0, enableHistogramMode);
+      const expectedAxisPositions = [
+        { label: '0', position: 100, value: 0 },
+        { label: '0.1', position: 90, value: 0.1 },
+        { label: '0.2', position: 80, value: 0.2 },
+        { label: '0.3', position: 70, value: 0.3 },
+        { label: '0.4', position: 60, value: 0.4 },
+        { label: '0.5', position: 50, value: 0.5 },
+        { label: '0.6', position: 40, value: 0.6 },
+        { label: '0.7', position: 30, value: 0.7 },
+        { label: '0.8', position: 20, value: 0.8 },
+        { label: '0.9', position: 10, value: 0.9 },
+        { label: '1', position: 0, value: 1 },
+      ];
+      expect(axisPositions).toEqual(expectedAxisPositions);
+    });
+
+    test('should extend ticks to domain + minInterval in histogram mode for linear scale', () => {
+      const enableHistogramMode = true;
+      const xBandDomain: XDomain = {
+        type: 'xDomain',
+        scaleType: ScaleType.Linear,
+        domain: [0, 100],
+        isBandScale: true,
+        minInterval: 10,
+      };
+      const xScale = getScaleForAxisSpec(horizontalAxisSpec, xBandDomain, [yDomain], 1, 0, 100, 0);
+      const histogramAxisPositions = getAvailableTicks(horizontalAxisSpec, xScale!, 1, enableHistogramMode);
+      const histogramTickLabels = histogramAxisPositions.map(({ label }: AxisTick) => label);
+      expect(histogramTickLabels).toEqual(['0', '10', '20', '30', '40', '50', '60', '70', '80', '90', '100', '110']);
+    });
+
+    test('should extend ticks to domain + minInterval in histogram mode for time scale', () => {
+      const enableHistogramMode = true;
+      const xBandDomain: XDomain = {
+        type: 'xDomain',
+        scaleType: ScaleType.Time,
+        domain: [1560438420000, 1560438510000],
+        isBandScale: true,
+        minInterval: 90000,
+      };
+      const xScale = getScaleForAxisSpec(horizontalAxisSpec, xBandDomain, [yDomain], 1, 0, 100, 0);
+      const histogramAxisPositions = getAvailableTicks(horizontalAxisSpec, xScale!, 1, enableHistogramMode);
+      const histogramTickValues = histogramAxisPositions.map(({ value }: AxisTick) => value);
+
+      const expectedTickValues = [
+        1560438420000,
+        1560438435000,
+        1560438450000,
+        1560438465000,
+        1560438480000,
+        1560438495000,
+        1560438510000,
+        1560438525000,
+        1560438540000,
+        1560438555000,
+        1560438570000,
+        1560438585000,
+        1560438600000,
+      ];
+
+      expect(histogramTickValues).toEqual(expectedTickValues);
+    });
+
+    test('should extend ticks to domain + minInterval in histogram mode for a scale with single datum', () => {
+      const enableHistogramMode = true;
+      const xBandDomain: XDomain = {
+        type: 'xDomain',
+        scaleType: ScaleType.Time,
+        domain: [1560438420000, 1560438420000], // a single datum scale will have the same value for domain start & end
+        isBandScale: true,
+        minInterval: 90000,
+      };
+      const xScale = getScaleForAxisSpec(horizontalAxisSpec, xBandDomain, [yDomain], 1, 0, 100, 0);
+      const histogramAxisPositions = getAvailableTicks(horizontalAxisSpec, xScale!, 1, enableHistogramMode);
+      const histogramTickValues = histogramAxisPositions.map(({ value }: AxisTick) => value);
+      const expectedTickValues = [1560438420000, 1560438510000];
+
+      expect(histogramTickValues).toEqual(expectedTickValues);
+    });
   });
   test('should compute visible ticks for a vertical axis', () => {
     const allTicks = [
@@ -461,7 +513,7 @@ describe('Axis computational utils', () => {
   });
   test('should get max bbox dimensions for a tick in comparison to previous values', () => {
     const bboxCalculator = new CanvasTextBBoxCalculator();
-    const reducer = getMaxBboxDimensions(bboxCalculator, 16, 'Arial', 0);
+    const reducer = getMaxBboxDimensions(bboxCalculator, 16, 'Arial', 0, 1);
 
     const accWithGreaterValues = {
       maxLabelBboxWidth: 100,
@@ -513,14 +565,13 @@ describe('Axis computational utils', () => {
     const tickSize = 10;
     const tickPadding = 5;
     const tickPosition = 0;
-    let axisPosition = Position.Left;
 
     const unrotatedLabelProps = getTickLabelProps(
       tickLabelRotation,
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Left,
       axis1Dims,
     );
 
@@ -537,7 +588,7 @@ describe('Axis computational utils', () => {
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Left,
       axis1Dims,
     );
 
@@ -548,13 +599,12 @@ describe('Axis computational utils', () => {
       verticalAlign: 'middle',
     });
 
-    axisPosition = Position.Right;
     const rightRotatedLabelProps = getTickLabelProps(
       tickLabelRotation,
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Right,
       axis1Dims,
     );
 
@@ -571,7 +621,7 @@ describe('Axis computational utils', () => {
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Right,
       axis1Dims,
     );
 
@@ -588,14 +638,13 @@ describe('Axis computational utils', () => {
     const tickSize = 10;
     const tickPadding = 5;
     const tickPosition = 0;
-    let axisPosition = Position.Top;
 
     const unrotatedLabelProps = getTickLabelProps(
       tickLabelRotation,
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Top,
       axis1Dims,
     );
 
@@ -612,7 +661,7 @@ describe('Axis computational utils', () => {
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Top,
       axis1Dims,
     );
 
@@ -623,13 +672,12 @@ describe('Axis computational utils', () => {
       verticalAlign: 'middle',
     });
 
-    axisPosition = Position.Bottom;
     const bottomRotatedLabelProps = getTickLabelProps(
       tickLabelRotation,
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Bottom,
       axis1Dims,
     );
 
@@ -646,7 +694,7 @@ describe('Axis computational utils', () => {
       tickSize,
       tickPadding,
       tickPosition,
-      axisPosition,
+      Position.Bottom,
       axis1Dims,
     );
 
@@ -664,12 +712,7 @@ describe('Axis computational utils', () => {
     const tickPosition = 10;
     const maxLabelBboxHeight = 20;
 
-    const leftAxisTickLinePositions = getVerticalAxisTickLineProps(
-      Position.Left,
-      tickPadding,
-      tickSize,
-      tickPosition,
-    );
+    const leftAxisTickLinePositions = getVerticalAxisTickLineProps(Position.Left, tickPadding, tickSize, tickPosition);
 
     expect(leftAxisTickLinePositions).toEqual([5, 10, 15, 10]);
 
@@ -712,10 +755,7 @@ describe('Axis computational utils', () => {
 
     expect(verticalAxisGridLinePositions).toEqual([0, 10, 100, 10]);
 
-    const horizontalAxisGridLinePositions = getHorizontalAxisGridLineProps(
-      tickPosition,
-      chartHeight,
-    );
+    const horizontalAxisGridLinePositions = getHorizontalAxisGridLineProps(tickPosition, chartHeight);
 
     expect(horizontalAxisGridLinePositions).toEqual([10, 0, 10, 200]);
   });
@@ -723,7 +763,7 @@ describe('Axis computational utils', () => {
   test('should compute axis ticks positions with title', () => {
     const chartRotation = 0;
     const showLegend = false;
-    
+
     // validate assumptions for test
     expect(verticalAxisSpec.id).toEqual(verticalAxisSpecWTitle.id);
 
@@ -743,11 +783,16 @@ describe('Axis computational utils', () => {
       xDomain,
       [yDomain],
       1,
+      false,
     );
 
     let left = 12 + 5 + 10 + 10; // font size + title padding + chart margin left + label width
-    expect(axisTicksPosition.axisPositions.get(verticalAxisSpecWTitle.id))
-      .toEqual({ top: 0, left, width: 10, height: 100 });
+    expect(axisTicksPosition.axisPositions.get(verticalAxisSpecWTitle.id)).toEqual({
+      top: 0,
+      left,
+      width: 10,
+      height: 100,
+    });
 
     axisSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
@@ -763,11 +808,16 @@ describe('Axis computational utils', () => {
       xDomain,
       [yDomain],
       1,
+      false,
     );
 
     left = 0 + 10 + 10; // no title + chart margin left + label width
-    expect(axisTicksPosition.axisPositions.get(verticalAxisSpecWTitle.id))
-      .toEqual({ top: 0, left: 20, width: 10, height: 100 });
+    expect(axisTicksPosition.axisPositions.get(verticalAxisSpecWTitle.id)).toEqual({
+      top: 0,
+      left: 20,
+      width: 10,
+      height: 100,
+    });
   });
 
   test('should compute left axis position', () => {
@@ -918,10 +968,10 @@ describe('Axis computational utils', () => {
     const showLegend = true;
     const leftLegendPosition = Position.Left;
 
-    const axisSpecs = new Map();
+    const axisSpecs = new Map<AxisId, AxisSpec>();
     axisSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
-    const axisDims = new Map();
+    const axisDims = new Map<AxisId, AxisTicksDimensions>();
     axisDims.set(getAxisId('not_a_mapped_one'), axis1Dims);
 
     const axisTicksPosition = getAxisTicksPositions(
@@ -934,6 +984,7 @@ describe('Axis computational utils', () => {
       xDomain,
       [yDomain],
       1,
+      false,
       leftLegendPosition,
     );
     expect(axisTicksPosition.axisPositions.size).toBe(0);
@@ -948,10 +999,10 @@ describe('Axis computational utils', () => {
     const leftLegendPosition = Position.Left;
     const topLegendPosition = Position.Top;
 
-    const axisSpecs = new Map();
+    const axisSpecs = new Map<AxisId, AxisSpec>();
     axisSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
-    const axisDims = new Map();
+    const axisDims = new Map<AxisId, AxisTicksDimensions>();
     axisDims.set(verticalAxisSpec.id, axis1Dims);
 
     const axisTicksPosition = getAxisTicksPositions(
@@ -964,6 +1015,7 @@ describe('Axis computational utils', () => {
       xDomain,
       [yDomain],
       1,
+      false,
       leftLegendPosition,
     );
 
@@ -981,9 +1033,7 @@ describe('Axis computational utils', () => {
       [0, 100, 100, 100],
     ];
 
-    expect(axisTicksPosition.axisGridLinesPositions.get(verticalAxisSpec.id)).toEqual(
-      expectedVerticalAxisGridLines,
-    );
+    expect(axisTicksPosition.axisGridLinesPositions.get(verticalAxisSpec.id)).toEqual(expectedVerticalAxisGridLines);
 
     const axisTicksPositionWithTopLegend = getAxisTicksPositions(
       chartDim,
@@ -995,6 +1045,7 @@ describe('Axis computational utils', () => {
       xDomain,
       [yDomain],
       1,
+      false,
       topLegendPosition,
     );
 
@@ -1004,13 +1055,11 @@ describe('Axis computational utils', () => {
       left: 100,
       top: 0,
     };
-    const verticalAxisWithTopLegendPosition = axisTicksPositionWithTopLegend.axisPositions.get(
-      verticalAxisSpec.id,
-    );
+    const verticalAxisWithTopLegendPosition = axisTicksPositionWithTopLegend.axisPositions.get(verticalAxisSpec.id);
     expect(verticalAxisWithTopLegendPosition).toEqual(expectedPositionWithTopLegend);
 
     const ungroupedAxisSpec = { ...verticalAxisSpec, groupId: getGroupId('foo') };
-    const invalidSpecs = new Map();
+    const invalidSpecs = new Map<AxisId, AxisSpec>();
     invalidSpecs.set(verticalAxisSpec.id, ungroupedAxisSpec);
     const computeScalelessSpec = () => {
       getAxisTicksPositions(
@@ -1023,6 +1072,7 @@ describe('Axis computational utils', () => {
         xDomain,
         [yDomain],
         1,
+        false,
         leftLegendPosition,
       );
     };
@@ -1073,7 +1123,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     // Base case
@@ -1111,9 +1161,7 @@ describe('Axis computational utils', () => {
       mergeDomainsByGroupId(axesSpecs, 0);
     };
 
-    expect(attemptToMerge).toThrowError(
-      '[Axis axis_2]: custom domain for xDomain should be defined in Settings',
-    );
+    expect(attemptToMerge).toThrowError('[Axis axis_2]: custom domain for xDomain should be defined in Settings');
   });
 
   test('should merge axis domains by group id: partial upper bounded prevDomain with complete domain', () => {
@@ -1129,7 +1177,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     const axis2 = { ...verticalAxisSpec, id: getAxisId('axis2') };
@@ -1157,7 +1205,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     const axis2 = { ...verticalAxisSpec, id: getAxisId('axis2') };
@@ -1188,7 +1236,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     const axis2 = { ...verticalAxisSpec, id: getAxisId('axis2') };
@@ -1224,7 +1272,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     const axis2 = { ...verticalAxisSpec, id: getAxisId('axis2') };
@@ -1252,7 +1300,7 @@ describe('Axis computational utils', () => {
 
     verticalAxisSpec.domain = domainRange1;
 
-    const axesSpecs = new Map();
+    const axesSpecs = new Map<AxisId, AxisSpec>();
     axesSpecs.set(verticalAxisSpec.id, verticalAxisSpec);
 
     const attemptToMerge = () => {
@@ -1274,5 +1322,25 @@ describe('Axis computational utils', () => {
 
     expect(isBounded(lowerBounded)).toBe(true);
     expect(isBounded(upperBounded)).toBe(true);
+  });
+  test('should not allow negative padding', () => {
+    const negativePadding = -2;
+    // value canvas_text_bbox_calculator changes negative values is 1
+    const positivePadding = 1;
+
+    const bboxCalculator = new CanvasTextBBoxCalculator();
+    const negativeReducer = getMaxBboxDimensions(bboxCalculator, 16, 'Arial', 0, negativePadding);
+    const positiveReducer = getMaxBboxDimensions(bboxCalculator, 16, 'Arial', 0, positivePadding);
+
+    expect(JSON.stringify(negativeReducer)).toEqual(JSON.stringify(positiveReducer));
+  });
+  test('should expect axisSpec.style.tickLabelPadding if specified', () => {
+    const axisSpecStyle: AxisStyle = {
+      tickLabelPadding: 2,
+    };
+
+    const axisConfigTickLabelPadding = 1;
+
+    expect(getAxisTickLabelPadding(axisConfigTickLabelPadding, axisSpecStyle)).toEqual(2);
   });
 });

@@ -1,14 +1,65 @@
+/* eslint @typescript-eslint/no-object-literal-type-assertion: off */
 import { computeSeriesDomains } from '../../state/utils';
-import { getGroupId, getSpecId } from '../utils/ids';
+import { getGroupId, getSpecId, SpecId } from '../utils/ids';
 import { ScaleType } from '../utils/scales/scales';
 import { CurveType } from './curves';
 import { AreaGeometry, IndexedGeometry, PointGeometry, renderArea } from './rendering';
 import { computeXScale, computeYScales } from './scales';
 import { AreaSeriesSpec } from './specs';
+import { LIGHT_THEME } from '../themes/light_theme';
 const SPEC_ID = getSpecId('spec_1');
 const GROUP_ID = getGroupId('group_1');
 
 describe('Rendering points - areas', () => {
+  describe('Empty line for missing data', () => {
+    const pointSeriesSpec: AreaSeriesSpec = {
+      id: SPEC_ID,
+      groupId: GROUP_ID,
+      seriesType: 'area',
+      yScaleToDataExtent: false,
+      data: [[0, 10], [1, 5]],
+      xAccessor: 0,
+      yAccessors: [1],
+      xScaleType: ScaleType.Ordinal,
+      yScaleType: ScaleType.Linear,
+    };
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
+    pointSeriesMap.set(SPEC_ID, pointSeriesSpec);
+    const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
+    const xScale = computeXScale(pointSeriesDomains.xDomain, pointSeriesMap.size, 0, 100);
+    const yScales = computeYScales(pointSeriesDomains.yDomain, 100, 0);
+    let renderedArea: {
+      areaGeometry: AreaGeometry;
+      indexedGeometries: Map<any, IndexedGeometry[]>;
+    };
+
+    beforeEach(() => {
+      renderedArea = renderArea(
+        25, // adding a ideal 25px shift, generally applied by renderGeometries
+        [],
+        xScale,
+        yScales.get(GROUP_ID)!,
+        'red',
+        CurveType.LINEAR,
+        SPEC_ID,
+        false,
+        [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
+      );
+    });
+    test('Render geometry but empty upper and lower lines and area paths', () => {
+      const {
+        areaGeometry: { lines, area, color, geometryId, transform },
+      } = renderedArea;
+      expect(lines.length).toBe(0);
+      expect(area).toBe('');
+      expect(color).toBe('red');
+      expect(geometryId.seriesKey).toEqual([]);
+      expect(geometryId.specId).toEqual(SPEC_ID);
+      expect(transform).toEqual({ x: 25, y: 0 });
+    });
+  });
   describe('Single series area chart - ordinal', () => {
     const pointSeriesSpec: AreaSeriesSpec = {
       id: SPEC_ID,
@@ -21,7 +72,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Ordinal,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(SPEC_ID, pointSeriesSpec);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
     const xScale = computeXScale(pointSeriesDomains.xDomain, pointSeriesMap.size, 0, 100);
@@ -42,6 +93,8 @@ describe('Rendering points - areas', () => {
         SPEC_ID,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('Can render an line and area paths', () => {
@@ -129,7 +182,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Ordinal,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(spec1Id, pointSeriesSpec1);
     pointSeriesMap.set(spec2Id, pointSeriesSpec2);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
@@ -156,6 +209,8 @@ describe('Rendering points - areas', () => {
         spec1Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
       secondLine = renderArea(
         25, // adding a ideal 25px shift, generally applied by renderGeometries
@@ -167,6 +222,8 @@ describe('Rendering points - areas', () => {
         spec2Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
 
@@ -290,7 +347,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Linear,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(SPEC_ID, pointSeriesSpec);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
     const xScale = computeXScale(pointSeriesDomains.xDomain, pointSeriesMap.size, 0, 100);
@@ -312,6 +369,8 @@ describe('Rendering points - areas', () => {
         SPEC_ID,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('Can render a linear area', () => {
@@ -393,7 +452,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Linear,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(spec1Id, pointSeriesSpec1);
     pointSeriesMap.set(spec2Id, pointSeriesSpec2);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
@@ -420,6 +479,8 @@ describe('Rendering points - areas', () => {
         spec1Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
       secondLine = renderArea(
         0, // not applied any shift, renderGeometries applies it only with mixed charts
@@ -431,6 +492,8 @@ describe('Rendering points - areas', () => {
         spec2Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('can render two linear areas', () => {
@@ -553,7 +616,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Time,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(SPEC_ID, pointSeriesSpec);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
     const xScale = computeXScale(pointSeriesDomains.xDomain, pointSeriesMap.size, 0, 100);
@@ -575,6 +638,8 @@ describe('Rendering points - areas', () => {
         SPEC_ID,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('Can render a time area', () => {
@@ -656,7 +721,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Time,
       yScaleType: ScaleType.Linear,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(spec1Id, pointSeriesSpec1);
     pointSeriesMap.set(spec2Id, pointSeriesSpec2);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
@@ -683,6 +748,8 @@ describe('Rendering points - areas', () => {
         spec1Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
       secondLine = renderArea(
         0, // not applied any shift, renderGeometries applies it only with mixed charts
@@ -694,6 +761,8 @@ describe('Rendering points - areas', () => {
         spec2Id,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('can render first spec points', () => {
@@ -801,7 +870,7 @@ describe('Rendering points - areas', () => {
       xScaleType: ScaleType.Linear,
       yScaleType: ScaleType.Log,
     };
-    const pointSeriesMap = new Map();
+    const pointSeriesMap = new Map<SpecId, AreaSeriesSpec>();
     pointSeriesMap.set(SPEC_ID, pointSeriesSpec);
     const pointSeriesDomains = computeSeriesDomains(pointSeriesMap, new Map());
     const xScale = computeXScale(pointSeriesDomains.xDomain, pointSeriesMap.size, 0, 90);
@@ -823,6 +892,8 @@ describe('Rendering points - areas', () => {
         SPEC_ID,
         false,
         [],
+        0,
+        LIGHT_THEME.areaSeriesStyle,
       );
     });
     test('Can render a splitted area and line', () => {

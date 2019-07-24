@@ -1,4 +1,4 @@
-import { BarGeometry, GeometryValue } from '../../lib/series/rendering';
+import { BarGeometry } from '../../lib/series/rendering';
 import { computeXScale, computeYScales } from '../../lib/series/scales';
 import { DataSeriesColorsValues } from '../../lib/series/series';
 import { BarSeriesSpec, BasicSeriesSpec, RectAnnotationSpec } from '../../lib/series/specs';
@@ -8,6 +8,7 @@ import { ScaleContinuous } from '../../lib/utils/scales/scale_continuous';
 import { ScaleType } from '../../lib/utils/scales/scales';
 import { ChartStore } from '../chart_state';
 import { computeSeriesDomains } from '../utils';
+import { ScaleBand } from '../../lib/utils/scales/scale_band';
 
 const SPEC_ID = getSpecId('spec_1');
 const GROUP_ID = getGroupId('group_1');
@@ -74,6 +75,24 @@ function initStore(spec: BasicSeriesSpec) {
   store.seriesSpecs.set(spec.id, spec);
   return store;
 }
+
+const barStyle = {
+  rect: {
+    opacity: 1,
+  },
+  rectBorder: {
+    strokeWidth: 1,
+    visible: false,
+  },
+  displayValue: {
+    fill: 'black',
+    fontFamily: '',
+    fontSize: 2,
+    offsetX: 0,
+    offsetY: 0,
+    padding: 2,
+  },
+};
 const indexedGeom1Red: BarGeometry = {
   color: 'red',
   x: 0,
@@ -89,6 +108,7 @@ const indexedGeom1Red: BarGeometry = {
     specId: SPEC_ID,
     seriesKey: [],
   },
+  seriesStyle: barStyle,
 };
 const indexedGeom2Blue: BarGeometry = {
   color: 'blue',
@@ -105,6 +125,7 @@ const indexedGeom2Blue: BarGeometry = {
     specId: SPEC_ID,
     seriesKey: [],
   },
+  seriesStyle: barStyle,
 };
 
 describe('Chart state pointer interactions', () => {
@@ -201,7 +222,7 @@ function mouseOverTestSuite(scaleType: ScaleType) {
     store.geometriesIndex.set(1, [indexedGeom2Blue]);
     store.geometriesIndexKeys.push(0);
     store.geometriesIndexKeys.push(1);
-    onOverListener = jest.fn((elements: GeometryValue[]): undefined => undefined);
+    onOverListener = jest.fn((): undefined => undefined);
     onOutListener = jest.fn((): undefined => undefined);
     store.setOnElementOverListener(onOverListener);
     store.setOnElementOutListener(onOutListener);
@@ -221,9 +242,7 @@ function mouseOverTestSuite(scaleType: ScaleType) {
       annotationId: getAnnotationId('rect'),
       groupId: GROUP_ID,
       annotationType: 'rectangle',
-      dataValues: [
-        { coordinates: { x0: 1, x1: 1.5, y0: 0.5, y1: 10 } },
-      ],
+      dataValues: [{ coordinates: { x0: 1, x1: 1.5, y0: 0.5, y1: 10 } }],
     };
 
     store.annotationSpecs.set(rectAnnotationSpec.annotationId, rectAnnotationSpec);
@@ -350,5 +369,27 @@ function mouseOverTestSuite(scaleType: ScaleType) {
     expect(onOverListener).toBeCalledTimes(1);
     expect(onOverListener.mock.calls[0][0]).toEqual([indexedGeom2Blue.value]);
     expect(onOutListener).toBeCalledTimes(0);
+  });
+
+  describe('can position tooltip within chart when xScale is a single value scale', () => {
+    beforeEach(() => {
+      const singleValueScale =
+        store.xScale!.type === ScaleType.Ordinal
+          ? new ScaleBand(['a'], [0, 0])
+          : new ScaleContinuous(ScaleType.Linear, [1, 1], [0, 0]);
+      store.xScale = singleValueScale;
+    });
+    test('horizontal chart rotation', () => {
+      store.setCursorPosition(chartLeft + 99, chartTop + 99);
+      const expectedTransform = `translateX(${chartLeft}px) translateX(-0%) translateY(109px) translateY(-100%)`;
+      expect(store.tooltipPosition.transform).toBe(expectedTransform);
+    });
+
+    test('vertical chart rotation', () => {
+      store.chartRotation = 90;
+      store.setCursorPosition(chartLeft + 99, chartTop + 99);
+      const expectedTransform = `translateX(109px) translateX(-100%) translateY(${chartTop}px) translateY(-0%)`;
+      expect(store.tooltipPosition.transform).toBe(expectedTransform);
+    });
   });
 }

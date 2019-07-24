@@ -26,16 +26,12 @@ export class RectAnnotation extends React.PureComponent<RectAnnotationProps> {
       height,
     };
 
-    return <Rect key={`rect-${i}`} {...rectProps} />;
-  }
+    return <Rect {...rectProps} key={`rect-${i}`} />;
+  };
 
   private renderAnnotation = () => {
     const { rects } = this.props;
 
-    return (
-      <Group>
-        {rects.map(this.renderAnnotationRect)}
-      </Group>
-    );
-  }
+    return <Group>{rects.map(this.renderAnnotationRect)}</Group>;
+  };
 }

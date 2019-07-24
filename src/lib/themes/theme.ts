@@ -1,13 +1,12 @@
 import { GeometryStyle } from '../series/rendering';
+import { mergePartial, RecursivePartial } from '../utils/commons';
 import { Margins } from '../utils/dimensions';
 import { LIGHT_THEME } from './light_theme';
 
 interface Visible {
   visible: boolean;
 }
-interface Radius {
-  radius: number;
-}
+
 export interface TextStyle {
   fontSize: number;
   fontFamily: string;
@@ -31,8 +30,10 @@ export interface StrokeStyle {
   stroke: string;
   /** The stroke width in pixel */
   strokeWidth: number;
+}
+export interface StrokeDashArray {
   /** The dash array for dashed strokes */
-  dash?: number[];
+  dash: number[];
 }
 export interface FillStyle {
   /** The fill color in hex, rgba, hsl */
@@ -62,6 +63,12 @@ export interface ScalesConfig {
    * A number between 0 and 1.
    */
   barsPadding: number;
+  /**
+   * The proportion of the range that is reserved for blank space between bands in histogramMode.
+   * A value of 0 means no blank space between bands, and a value of 1 means a bandwidth of zero.
+   * A number between 0 and 1.
+   */
+  histogramPadding: number;
 }
 export interface ColorConfig {
   vizColors: string[];
@@ -91,37 +98,90 @@ export interface Theme {
   crosshair: CrosshairStyle;
 }
 
+export type PartialTheme = RecursivePartial<Theme>;
+
+export const BaseThemeTypes = Object.freeze({
+  Light: 'light' as 'light',
+  Dark: 'dark' as 'dark',
+});
+
+export type BaseThemeType = typeof BaseThemeTypes.Dark | typeof BaseThemeTypes.Light;
+
 export type DisplayValueStyle = TextStyle & {
-  offsetX?: number;
-  offsetY?: number;
+  offsetX: number;
+  offsetY: number;
 };
 
-export interface BarSeriesStyle {
-  border: StrokeStyle & Visible;
-  displayValue?: DisplayValueStyle;
+export interface PointStyle {
+  /** is the point visible or hidden */
+  visible: boolean;
+  /** a static stroke color if defined, if not it will use the color of the series */
+  stroke?: string;
+  /** the stroke width of the point */
+  strokeWidth: number;
+  /**  a static fill color if defined, if not it will use the color of the series */
+  fill?: string;
+  /** the opacity of each point on the theme/series */
+  opacity: number;
+  /** the radius of each point of the theme/series */
+  radius: number;
 }
 
-export type CustomBarSeriesStyle = BarSeriesStyle & Partial<Opacity>;
+export interface LineStyle {
+  /** is the line visible or hidden ? */
+  visible: boolean;
+  /** a static stroke color if defined, if not it will use the color of the series */
+  stroke?: string;
+  /** the stroke width of the line */
+  strokeWidth: number;
+  /** the opacity of each line on the theme/series */
+  opacity: number;
+}
+
+export interface AreaStyle {
+  /** is the area is visible or hidden ? */
+  visible: boolean;
+  /** a static fill color if defined, if not it will use the color of the series */
+  fill?: string;
+  /** the opacity of each area on the theme/series */
+  opacity: number;
+}
+
+export interface RectStyle {
+  /** a static fill color if defined, if not it will use the color of the series */
+  fill?: string;
+  /** the opacity of each rect on the theme/series */
+  opacity: number;
+}
+
+export interface RectBorderStyle {
+  /** is the rect border visible or hidden ? */
+  visible: boolean;
+  /** a static stroke color if defined, if not it will use the color of the series */
+  stroke?: string;
+  /** the stroke width of the rect border */
+  strokeWidth: number;
+}
+export interface BarSeriesStyle {
+  rect: RectStyle;
+  rectBorder: RectBorderStyle;
+  displayValue: DisplayValueStyle;
+}
 
 export interface LineSeriesStyle {
   line: LineStyle;
-  border: StrokeStyle & Visible;
   point: PointStyle;
 }
-
-export type PointStyle = StrokeStyle & Opacity & Visible & Radius;
-export type LineStyle = StrokeStyle & Visible & Partial<Opacity>;
-export type AreaStyle = FillStyle & Opacity & Visible;
 
 export interface AreaSeriesStyle {
   area: AreaStyle;
   line: LineStyle;
-  border: StrokeStyle & Visible;
   point: PointStyle;
 }
+
 export interface CrosshairStyle {
   band: FillStyle & Visible;
-  line: StrokeStyle & Visible;
+  line: StrokeStyle & Visible & Partial<StrokeDashArray>;
 }
 
 export interface LineAnnotationStyle {
@@ -130,20 +190,6 @@ export interface LineAnnotationStyle {
 }
 
 export type RectAnnotationStyle = StrokeStyle & FillStyle & Opacity;
-
-export interface PartialTheme {
-  chartMargins?: Margins;
-  chartPaddings?: Margins;
-  lineSeriesStyle?: LineSeriesStyle;
-  areaSeriesStyle?: AreaSeriesStyle;
-  barSeriesStyle?: BarSeriesStyle;
-  sharedStyle?: SharedGeometryStyle;
-  axes?: Partial<AxisConfig>;
-  scales?: Partial<ScalesConfig>;
-  colors?: Partial<ColorConfig>;
-  legend?: Partial<LegendStyle>;
-  crosshair?: Partial<CrosshairStyle>;
-}
 
 export const DEFAULT_GRID_LINE_CONFIG: GridLineConfig = {
   stroke: 'red',
@@ -174,8 +220,7 @@ export const DEFAULT_ANNOTATION_RECT_STYLE: RectAnnotationStyle = {
 };
 
 export function mergeWithDefaultGridLineConfig(config: GridLineConfig): GridLineConfig {
-  const strokeWidth =
-    config.strokeWidth != null ? config.strokeWidth : DEFAULT_GRID_LINE_CONFIG.strokeWidth;
+  const strokeWidth = config.strokeWidth != null ? config.strokeWidth : DEFAULT_GRID_LINE_CONFIG.strokeWidth;
   const opacity = config.opacity != null ? config.opacity : DEFAULT_GRID_LINE_CONFIG.opacity;
 
   return {
@@ -186,9 +231,7 @@ export function mergeWithDefaultGridLineConfig(config: GridLineConfig): GridLine
   };
 }
 
-export function mergeWithDefaultAnnotationLine(
-  config?: Partial<LineAnnotationStyle>,
-): LineAnnotationStyle {
+export function mergeWithDefaultAnnotationLine(config?: Partial<LineAnnotationStyle>): LineAnnotationStyle {
   const defaultLine = DEFAULT_ANNOTATION_LINE_STYLE.line;
   const defaultDetails = DEFAULT_ANNOTATION_LINE_STYLE.details;
   const mergedConfig: LineAnnotationStyle = { ...DEFAULT_ANNOTATION_LINE_STYLE };
@@ -225,78 +268,6 @@ export function mergeWithDefaultAnnotationRect(config?: Partial<RectAnnotationSt
   };
 }
 
-export function mergeWithDefaultTheme(
-  theme: PartialTheme,
-  defaultTheme: Theme = LIGHT_THEME,
-): Theme {
-  const customTheme: Theme = {
-    ...defaultTheme,
-  };
-  if (theme.chartMargins) {
-    customTheme.chartMargins = {
-      ...defaultTheme.chartMargins,
-      ...theme.chartMargins,
-    };
-  }
-  if (theme.chartPaddings) {
-    customTheme.chartPaddings = {
-      ...defaultTheme.chartPaddings,
-      ...theme.chartPaddings,
-    };
-  }
-  if (theme.areaSeriesStyle) {
-    customTheme.areaSeriesStyle = {
-      ...defaultTheme.areaSeriesStyle,
-      ...theme.areaSeriesStyle,
-    };
-  }
-  if (theme.lineSeriesStyle) {
-    customTheme.lineSeriesStyle = {
-      ...defaultTheme.lineSeriesStyle,
-      ...theme.lineSeriesStyle,
-    };
-  }
-  if (theme.barSeriesStyle) {
-    customTheme.barSeriesStyle = {
-      ...defaultTheme.barSeriesStyle,
-      ...theme.barSeriesStyle,
-    };
-  }
-  if (theme.sharedStyle) {
-    customTheme.sharedStyle = {
-      ...defaultTheme.sharedStyle,
-      ...theme.sharedStyle,
-    };
-  }
-  if (theme.scales) {
-    customTheme.scales = {
-      ...defaultTheme.scales,
-      ...theme.scales,
-    };
-  }
-  if (theme.axes) {
-    customTheme.axes = {
-      ...defaultTheme.axes,
-      ...theme.axes,
-    };
-  }
-  if (theme.colors) {
-    customTheme.colors = {
-      ...defaultTheme.colors,
-      ...theme.colors,
-    };
-  }
-  if (theme.legend) {
-    customTheme.legend = {
-      ...defaultTheme.legend,
-      ...theme.legend,
-    };
-  }
-  if (theme.crosshair) {
-    customTheme.crosshair = {
-      ...defaultTheme.crosshair,
-      ...theme.crosshair,
-    };
-  }
-  return customTheme;
+export function mergeWithDefaultTheme(theme: PartialTheme, defaultTheme: Theme = LIGHT_THEME): Theme {
+  return mergePartial(defaultTheme, theme, { mergeOptionalPartialValues: true });
 }

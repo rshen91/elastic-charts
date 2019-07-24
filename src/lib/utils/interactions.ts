@@ -1,24 +1,25 @@
-import {
-  BarGeometry,
-  IndexedGeometry,
-  isBarGeometry,
-  isPointGeometry,
-  PointGeometry,
-} from '../series/rendering';
+import { BarGeometry, IndexedGeometry, isBarGeometry, isPointGeometry, PointGeometry } from '../series/rendering';
 import { Datum, Rotation } from '../series/specs';
 import { Dimensions } from './dimensions';
 
 /** The type of tooltip to use */
-export enum TooltipType {
+export const TooltipType = Object.freeze({
   /** Vertical cursor parallel to x axis */
-  VerticalCursor = 'vertical',
+  VerticalCursor: 'vertical' as 'vertical',
   /** Vertical and horizontal cursors */
-  Crosshairs = 'cross',
+  Crosshairs: 'cross' as 'cross',
   /** Follor the mouse coordinates */
-  Follow = 'follow',
+  Follow: 'follow' as 'follow',
   /** Hide every tooltip */
-  None = 'none',
-}
+  None: 'none' as 'none',
+});
+
+export type TooltipType =
+  | typeof TooltipType.VerticalCursor
+  | typeof TooltipType.Crosshairs
+  | typeof TooltipType.Follow
+  | typeof TooltipType.None;
+
 export interface TooltipValue {
   name: string;
   value: any;
@@ -27,6 +28,9 @@ export interface TooltipValue {
   isXValue: boolean;
   seriesKey: string;
 }
+
+export type TooltipValueFormatter = (data: TooltipValue) => JSX.Element | string;
+
 export interface HighlightedElement {
   position: {
     x: number;
@@ -44,12 +48,7 @@ export interface HighlightedElement {
  * @param chartRotation the chart rotation
  * @param chartDimension the chart dimension
  */
-export function getValidXPosition(
-  xPos: number,
-  yPos: number,
-  chartRotation: Rotation,
-  chartDimension: Dimensions,
-) {
+export function getValidXPosition(xPos: number, yPos: number, chartRotation: Rotation, chartDimension: Dimensions) {
   switch (chartRotation) {
     case 0:
       return xPos;
@@ -61,12 +60,7 @@ export function getValidXPosition(
       return chartDimension.height - yPos;
   }
 }
-export function getValidYPosition(
-  xPos: number,
-  yPos: number,
-  chartRotation: Rotation,
-  chartDimension: Dimensions,
-) {
+export function getValidYPosition(xPos: number, yPos: number, chartRotation: Rotation, chartDimension: Dimensions) {
   switch (chartRotation) {
     case 0:
       return yPos;
@@ -84,6 +78,9 @@ export function isCrosshairTooltipType(type: TooltipType) {
 }
 export function isFollowTooltipType(type: TooltipType) {
   return type === TooltipType.Follow;
+}
+export function isNoneTooltipType(type: TooltipType) {
+  return type === TooltipType.None;
 }
 
 export function areIndexedGeometryArraysEquals(arr1: IndexedGeometry[], arr2: IndexedGeometry[]) {

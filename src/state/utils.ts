@@ -2,11 +2,13 @@ import { isVertical } from '../lib/axes/axis_utils';
 import { CurveType } from '../lib/series/curves';
 import { mergeXDomain, XDomain } from '../lib/series/domains/x_domain';
 import { mergeYDomain, YDomain } from '../lib/series/domains/y_domain';
+import { LegendItem } from '../lib/series/legend';
 import {
   AreaGeometry,
   BarGeometry,
   IndexedGeometry,
   LineGeometry,
+  mutableIndexedGeometryMapUpsert,
   PointGeometry,
   renderArea,
   renderBars,
@@ -16,17 +18,19 @@ import { computeXScale, computeYScales, countBarsInCluster } from '../lib/series
 import {
   DataSeries,
   DataSeriesColorsValues,
+  findDataSeriesByColorValues,
   FormattedDataSeries,
   getColorValuesAsString,
   getFormattedDataseries,
   getSplittedSeries,
 } from '../lib/series/series';
-import { isEqualSeriesKey } from '../lib/series/series_utils';
 import {
   AreaSeriesSpec,
   AxisSpec,
   BasicSeriesSpec,
   DomainRange,
+  HistogramModeAlignment,
+  HistogramModeAlignments,
   isAreaSeriesSpec,
   isBarSeriesSpec,
   isLineSeriesSpec,
@@ -34,7 +38,7 @@ import {
   Rotation,
 } from '../lib/series/specs';
 import { ColorConfig, Theme } from '../lib/themes/theme';
-import { identity } from '../lib/utils/commons';
+import { identity, mergePartial } from '../lib/utils/commons';
 import { Dimensions } from '../lib/utils/dimensions';
 import { Domain } from '../lib/utils/domain';
 import { AxisId, GroupId, SpecId } from '../lib/utils/ids';
@@ -65,19 +69,6 @@ export interface GeometriesCounts {
   linePoints: number;
 }
 
-export function findDataSeriesByColorValues(
-  series: DataSeriesColorsValues[] | null,
-  value: DataSeriesColorsValues,
-): number {
-  if (!series) {
-    return -1;
-  }
-
-  return series.findIndex((item: DataSeriesColorsValues) => {
-    return isEqualSeriesKey(item.colorValues, value.colorValues) && item.specId === value.specId;
-  });
-}
-
 export function updateDeselectedDataSeries(
   series: DataSeriesColorsValues[] | null,
   value: DataSeriesColorsValues,
@@ -93,24 +84,50 @@ export function updateDeselectedDataSeries(
   return updatedSeries;
 }
 
-export function getUpdatedCustomSeriesColors(
-  seriesSpecs: Map<SpecId, BasicSeriesSpec>,
-): Map<string, string> {
+export function getUpdatedCustomSeriesColors(seriesSpecs: Map<SpecId, BasicSeriesSpec>): Map<string, string> {
   const updatedCustomSeriesColors = new Map();
-  seriesSpecs.forEach((spec: BasicSeriesSpec, id: SpecId) => {
+  seriesSpecs.forEach((spec: BasicSeriesSpec) => {
     if (spec.customSeriesColors) {
       if (typeof spec.customSeriesColors === 'object') {
-        spec.customSeriesColors.forEach(
-          (color: string, seriesColorValues: DataSeriesColorsValues) => {
-            const { colorValues, specId } = seriesColorValues;
-            const seriesLabel = getColorValuesAsString(colorValues, specId);
-            updatedCustomSeriesColors.set(seriesLabel, color);
-          },
-        );
+        spec.customSeriesColors.forEach((color: string, seriesColorValues: DataSeriesColorsValues) => {
+          const { colorValues, specId } = seriesColorValues;
+          const seriesLabel = getColorValuesAsString(colorValues, specId);
+          updatedCustomSeriesColors.set(seriesLabel, color);
+        });
       }
     }
   });
   return updatedCustomSeriesColors;
+}
+
+export function getLastValues(formattedDataSeries: {
+  stacked: FormattedDataSeries[];
+  nonStacked: FormattedDataSeries[];
+}): Map<string, number> {
+  const lastValues = new Map<string, number>();
+
+  // we need to get the latest
+  formattedDataSeries.stacked.forEach((ds) => {
+    ds.dataSeries.forEach((series) => {
+      if (series.data.length > 0) {
+        const last = series.data[series.data.length - 1];
+        if (last !== null && last.initialY1 !== null) {
+          lastValues.set(series.seriesColorKey, last.initialY1);
+        }
+      }
+    });
+  });
+  formattedDataSeries.nonStacked.forEach((ds) => {
+    ds.dataSeries.forEach((series) => {
+      if (series.data.length > 0) {
+        const last = series.data[series.data.length - 1];
+        if (last !== null && last.initialY1 !== null) {
+          lastValues.set(series.seriesColorKey, last.initialY1);
+        }
+      }
+    });
+  });
+  return lastValues;
 }
 
 /**
@@ -127,12 +144,8 @@ export function computeSeriesDomains(
   customXDomain?: DomainRange | Domain,
   deselectedDataSeries?: DataSeriesColorsValues[] | null,
 ): SeriesDomainsAndData {
-  const { splittedSeries, xValues, seriesColors } = getSplittedSeries(
-    seriesSpecs,
-    deselectedDataSeries,
-  );
-  // tslint:disable-next-line:no-console
-  // console.log({ splittedSeries, xValues, seriesColors });
+  const { splittedSeries, xValues, seriesColors } = getSplittedSeries(seriesSpecs, deselectedDataSeries);
+
   const splittedDataSeries = [...splittedSeries.values()];
   const specsArray = [...seriesSpecs.values()];
 
@@ -140,15 +153,25 @@ export function computeSeriesDomains(
   const yDomain = mergeYDomain(splittedSeries, specsArray, domainsByGroupId);
 
   const formattedDataSeries = getFormattedDataseries(specsArray, splittedSeries);
-  // tslint:disable-next-line:no-console
-  // console.log({ formattedDataSeries, xDomain, yDomain });
 
+  // we need to get the last values from the formatted dataseries
+  // because we change the format if we are on percentage mode
+  const lastValues = getLastValues(formattedDataSeries);
+  const updatedSeriesColors = new Map<string, DataSeriesColorsValues>();
+  seriesColors.forEach((value, key) => {
+    const lastValue = lastValues.get(key);
+    const updatedColorSet = {
+      ...value,
+      lastValue,
+    };
+    updatedSeriesColors.set(key, updatedColorSet);
+  });
   return {
     xDomain,
     yDomain,
     splittedDataSeries,
     formattedDataSeries,
-    seriesColors,
+    seriesColors: updatedSeriesColors,
   };
 }
 
@@ -165,6 +188,7 @@ export function computeSeriesGeometries(
   chartDims: Dimensions,
   chartRotation: Rotation,
   axesSpecs: Map<AxisId, AxisSpec>,
+  enableHistogramMode: boolean,
 ): {
   scales: {
     xScale: Scale;
@@ -180,7 +204,7 @@ export function computeSeriesGeometries(
   geometriesCounts: GeometriesCounts;
 } {
   const chartColors: ColorConfig = chartTheme.colors;
-  const barsPadding = chartTheme.scales.barsPadding;
+  const barsPadding = enableHistogramMode ? chartTheme.scales.histogramPadding : chartTheme.scales.barsPadding;
 
   const width = [0, 180].includes(chartRotation) ? chartDims.width : chartDims.height;
   const height = [0, 180].includes(chartRotation) ? chartDims.height : chartDims.width;
@@ -191,7 +215,7 @@ export function computeSeriesGeometries(
   const { stackedBarsInCluster, totalBarsInCluster } = countBarsInCluster(stacked, nonStacked);
 
   // compute scales
-  const xScale = computeXScale(xDomain, totalBarsInCluster, 0, width, barsPadding);
+  const xScale = computeXScale(xDomain, totalBarsInCluster, 0, width, barsPadding, enableHistogramMode);
   const yScales = computeYScales(yDomain, height, 0);
 
   // compute colors
@@ -212,7 +236,7 @@ export function computeSeriesGeometries(
     lines: 0,
     linePoints: 0,
   };
-  formattedDataSeries.stacked.forEach((dataSeriesGroup, index) => {
+  formattedDataSeries.stacked.forEach((dataSeriesGroup) => {
     const { groupId, dataSeries, counts } = dataSeriesGroup;
     const yScale = yScales.get(groupId);
     if (!yScale) {
@@ -231,16 +255,14 @@ export function computeSeriesGeometries(
       chartColors.defaultVizColor,
       axesSpecs,
       chartTheme,
+      enableHistogramMode,
     );
     orderIndex = counts.barSeries > 0 ? orderIndex + 1 : orderIndex;
     areas.push(...geometries.areas);
     lines.push(...geometries.lines);
     bars.push(...geometries.bars);
     points.push(...geometries.points);
-    stackedGeometriesIndex = mergeGeometriesIndexes(
-      stackedGeometriesIndex,
-      geometries.geometriesIndex,
-    );
+    stackedGeometriesIndex = mergeGeometriesIndexes(stackedGeometriesIndex, geometries.geometriesIndex);
     // update counts
     geometriesCounts.points += geometries.geometriesCounts.points;
     geometriesCounts.bars += geometries.geometriesCounts.bars;
@@ -249,7 +271,7 @@ export function computeSeriesGeometries(
     geometriesCounts.lines += geometries.geometriesCounts.lines;
     geometriesCounts.linePoints += geometries.geometriesCounts.linePoints;
   });
-  formattedDataSeries.nonStacked.map((dataSeriesGroup, index) => {
+  formattedDataSeries.nonStacked.map((dataSeriesGroup) => {
     const { groupId, dataSeries } = dataSeriesGroup;
     const yScale = yScales.get(groupId);
     if (!yScale) {
@@ -267,6 +289,7 @@ export function computeSeriesGeometries(
       chartColors.defaultVizColor,
       axesSpecs,
       chartTheme,
+      enableHistogramMode,
     );
 
     areas.push(...geometries.areas);
@@ -274,10 +297,7 @@ export function computeSeriesGeometries(
     bars.push(...geometries.bars);
     points.push(...geometries.points);
 
-    nonStackedGeometriesIndex = mergeGeometriesIndexes(
-      nonStackedGeometriesIndex,
-      geometries.geometriesIndex,
-    );
+    nonStackedGeometriesIndex = mergeGeometriesIndexes(nonStackedGeometriesIndex, geometries.geometriesIndex);
     // update counts
     geometriesCounts.points += geometries.geometriesCounts.points;
     geometriesCounts.bars += geometries.geometriesCounts.bars;
@@ -303,6 +323,60 @@ export function computeSeriesGeometries(
   };
 }
 
+export function setBarSeriesAccessors(isHistogramMode: boolean, seriesSpecs: Map<SpecId, BasicSeriesSpec>): void {
+  if (!isHistogramMode) {
+    return;
+  }
+
+  for (const [, spec] of seriesSpecs) {
+    if (isBarSeriesSpec(spec)) {
+      let stackAccessors = spec.stackAccessors ? [...spec.stackAccessors] : spec.yAccessors;
+
+      if (spec.splitSeriesAccessors) {
+        stackAccessors = [...stackAccessors, ...spec.splitSeriesAccessors];
+      }
+
+      spec.stackAccessors = stackAccessors;
+    }
+  }
+
+  return;
+}
+
+export function isHistogramModeEnabled(seriesSpecs: Map<SpecId, BasicSeriesSpec>): boolean {
+  for (const [, spec] of seriesSpecs) {
+    if (isBarSeriesSpec(spec) && spec.enableHistogramMode) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function computeXScaleOffset(
+  xScale: Scale,
+  enableHistogramMode: boolean,
+  histogramModeAlignment: HistogramModeAlignment = HistogramModeAlignments.Start,
+): number {
+  if (!enableHistogramMode) {
+    return 0;
+  }
+
+  const { bandwidth, barsPadding } = xScale;
+  const band = bandwidth / (1 - barsPadding);
+  const halfPadding = (band - bandwidth) / 2;
+
+  const startAlignmentOffset = bandwidth / 2 + halfPadding;
+
+  switch (histogramModeAlignment) {
+    case HistogramModeAlignments.Center:
+      return 0;
+    case HistogramModeAlignments.End:
+      return -startAlignmentOffset;
+    default:
+      return startAlignmentOffset;
+  }
+}
+
 export function renderGeometries(
   indexOffset: number,
   clusteredCount: number,
@@ -315,6 +389,7 @@ export function renderGeometries(
   defaultColor: string,
   axesSpecs: Map<AxisId, AxisSpec>,
   chartTheme: Theme,
+  enableHistogramMode: boolean,
 ): {
   points: PointGeometry[];
   bars: BarGeometry[];
@@ -350,80 +425,87 @@ export function renderGeometries(
     const color = seriesColorsMap.get(ds.seriesColorKey) || defaultColor;
 
     if (isBarSeriesSpec(spec)) {
-        const shift = isStacked ? indexOffset : indexOffset + i;
+      const shift = isStacked ? indexOffset : indexOffset + i;
 
-        // TODO: we can handle style merging here and not pass that off to the component
-        // then barSeriesStyle should not be an optional parameter and we can simplify
-        // the props building in the geometries component
-        const barSeriesStyle = spec.barSeriesStyle ? {
-          ...chartTheme.barSeriesStyle,
-          ...spec.barSeriesStyle,
-        } : chartTheme.barSeriesStyle;
+      const barSeriesStyle = mergePartial(chartTheme.barSeriesStyle, spec.barSeriesStyle, {
+        mergeOptionalPartialValues: true,
+      });
 
-        const { yAxis } = getAxesSpecForSpecId(axesSpecs, spec.groupId);
-        const valueFormatter = yAxis && yAxis.tickFormat ? yAxis.tickFormat : identity;
+      const { yAxis } = getAxesSpecForSpecId(axesSpecs, spec.groupId);
+      const valueFormatter = yAxis && yAxis.tickFormat ? yAxis.tickFormat : identity;
 
-        const displayValueSettings = spec.displayValueSettings ? {
-          valueFormatter,
-          ...spec.displayValueSettings,
-        } : undefined;
+      const displayValueSettings = spec.displayValueSettings
+        ? {
+            valueFormatter,
+            ...spec.displayValueSettings,
+          }
+        : undefined;
 
-        const renderedBars = renderBars(
-          shift, ds.data, xScale, yScale, color,
-          ds.specId, ds.key, displayValueSettings, barSeriesStyle,
-        );
-        barGeometriesIndex = mergeGeometriesIndexes(
-          barGeometriesIndex,
-          renderedBars.indexedGeometries,
-        );
-        bars.push(...renderedBars.barGeometries);
-        geometriesCounts.bars += renderedBars.barGeometries.length;
+      const renderedBars = renderBars(
+        shift,
+        ds.data,
+        xScale,
+        yScale,
+        color,
+        ds.specId,
+        ds.key,
+        barSeriesStyle,
+        displayValueSettings,
+      );
+      barGeometriesIndex = mergeGeometriesIndexes(barGeometriesIndex, renderedBars.indexedGeometries);
+      bars.push(...renderedBars.barGeometries);
+      geometriesCounts.bars += renderedBars.barGeometries.length;
     } else if (isLineSeriesSpec(spec)) {
-        const lineShift = clusteredCount > 0 ? clusteredCount : 1;
-        const lineSeriesStyle = spec.lineSeriesStyle;
-        const renderedLines = renderLine(
-          // move the point on half of the bandwidth if we have mixed bars/lines
-          (xScale.bandwidth * lineShift) / 2,
-          ds.data,
-          xScale,
-          yScale,
-          color,
-          (spec as LineSeriesSpec).curve || CurveType.LINEAR,
-          ds.specId,
-          Boolean(spec.y0Accessors),
-          ds.key,
-          lineSeriesStyle,
-        );
-        lineGeometriesIndex = mergeGeometriesIndexes(
-          lineGeometriesIndex,
-          renderedLines.indexedGeometries,
-        );
-        lines.push(renderedLines.lineGeometry);
-        geometriesCounts.linePoints += renderedLines.lineGeometry.points.length;
-        geometriesCounts.lines += 1;
+      const lineShift = clusteredCount > 0 ? clusteredCount : 1;
+      const lineSeriesStyle = spec.lineSeriesStyle
+        ? mergePartial(chartTheme.lineSeriesStyle, spec.lineSeriesStyle, { mergeOptionalPartialValues: true })
+        : chartTheme.lineSeriesStyle;
+
+      const xScaleOffset = computeXScaleOffset(xScale, enableHistogramMode, spec.histogramModeAlignment);
+
+      const renderedLines = renderLine(
+        // move the point on half of the bandwidth if we have mixed bars/lines
+        (xScale.bandwidth * lineShift) / 2,
+        ds.data,
+        xScale,
+        yScale,
+        color,
+        (spec as LineSeriesSpec).curve || CurveType.LINEAR,
+        ds.specId,
+        Boolean(spec.y0Accessors),
+        ds.key,
+        xScaleOffset,
+        lineSeriesStyle,
+      );
+      lineGeometriesIndex = mergeGeometriesIndexes(lineGeometriesIndex, renderedLines.indexedGeometries);
+      lines.push(renderedLines.lineGeometry);
+      geometriesCounts.linePoints += renderedLines.lineGeometry.points.length;
+      geometriesCounts.lines += 1;
     } else if (isAreaSeriesSpec(spec)) {
-        const areaShift = clusteredCount > 0 ? clusteredCount : 1;
-        const areaSeriesStyle = spec.areaSeriesStyle;
-        const renderedAreas = renderArea(
-          // move the point on half of the bandwidth if we have mixed bars/lines
-          (xScale.bandwidth * areaShift) / 2,
-          ds.data,
-          xScale,
-          yScale,
-          color,
-          (spec as AreaSeriesSpec).curve || CurveType.LINEAR,
-          ds.specId,
-          Boolean(spec.y0Accessors),
-          ds.key,
-          areaSeriesStyle,
-        );
-        areaGeometriesIndex = mergeGeometriesIndexes(
-          areaGeometriesIndex,
-          renderedAreas.indexedGeometries,
-        );
-        areas.push(renderedAreas.areaGeometry);
-        geometriesCounts.areasPoints += renderedAreas.areaGeometry.points.length;
-        geometriesCounts.areas += 1;
+      const areaShift = clusteredCount > 0 ? clusteredCount : 1;
+      const areaSeriesStyle = spec.areaSeriesStyle
+        ? mergePartial(chartTheme.areaSeriesStyle, spec.areaSeriesStyle, { mergeOptionalPartialValues: true })
+        : chartTheme.areaSeriesStyle;
+      const xScaleOffset = computeXScaleOffset(xScale, enableHistogramMode, spec.histogramModeAlignment);
+
+      const renderedAreas = renderArea(
+        // move the point on half of the bandwidth if we have mixed bars/lines
+        (xScale.bandwidth * areaShift) / 2,
+        ds.data,
+        xScale,
+        yScale,
+        color,
+        (spec as AreaSeriesSpec).curve || CurveType.LINEAR,
+        ds.specId,
+        Boolean(spec.y0Accessors),
+        ds.key,
+        xScaleOffset,
+        areaSeriesStyle,
+      );
+      areaGeometriesIndex = mergeGeometriesIndexes(areaGeometriesIndex, renderedAreas.indexedGeometries);
+      areas.push(renderedAreas.areaGeometry);
+      geometriesCounts.areasPoints += renderedAreas.areaGeometry.points.length;
+      geometriesCounts.areas += 1;
     }
   }
   const geometriesIndex = mergeGeometriesIndexes(
@@ -465,10 +547,7 @@ export function getAxesSpecForSpecId(axesSpecs: Map<AxisId, AxisSpec>, groupId: 
   };
 }
 
-export function computeChartTransform(
-  chartDimensions: Dimensions,
-  chartRotation: Rotation,
-): Transform {
+export function computeChartTransform(chartDimensions: Dimensions, chartRotation: Rotation): Transform {
   if (chartRotation === 90) {
     return {
       x: chartDimensions.width,
@@ -523,7 +602,7 @@ export function computeBrushExtent(
  * @returns a new Map where each element with the same key are concatenated on a single
  * IndexedGemoetry array for that key
  */
-export function mergeGeometriesIndexes(...iterables: Array<Map<any, IndexedGeometry[]>>) {
+export function mergeGeometriesIndexes(...iterables: Map<any, IndexedGeometry[]>[]) {
   const geometriesIndex: Map<any, IndexedGeometry[]> = new Map();
 
   for (const iterable of iterables) {
@@ -532,20 +611,6 @@ export function mergeGeometriesIndexes(...iterables: Array<Map<any, IndexedGeome
     }
   }
   return geometriesIndex;
-}
-
-export function mutableIndexedGeometryMapUpsert(
-  mutableGeometriesIndex: Map<any, IndexedGeometry[]>,
-  key: any,
-  geometry: IndexedGeometry | IndexedGeometry[],
-) {
-  const existing = mutableGeometriesIndex.get(key);
-  const upsertGeometry: IndexedGeometry[] = Array.isArray(geometry) ? geometry : [geometry];
-  if (existing === undefined) {
-    mutableGeometriesIndex.set(key, upsertGeometry);
-  } else {
-    mutableGeometriesIndex.set(key, [...upsertGeometry, ...existing]);
-  }
 }
 
 export function isHorizontalRotation(chartRotation: Rotation) {
@@ -566,10 +631,7 @@ export function isLineAreaOnlyChart(specs: Map<SpecId, BasicSeriesSpec>) {
   });
 }
 
-export function isChartAnimatable(
-  geometriesCounts: GeometriesCounts,
-  animationEnabled: boolean,
-): boolean {
+export function isChartAnimatable(geometriesCounts: GeometriesCounts, animationEnabled: boolean): boolean {
   if (!animationEnabled) {
     return false;
   }
@@ -577,4 +639,13 @@ export function isChartAnimatable(
   const isBarsAnimatable = bars <= MAX_ANIMATABLE_BARS;
   const isLinesAndAreasAnimatable = linePoints + areasPoints <= MAX_ANIMATABLE_LINES_AREA_POINTS;
   return isBarsAnimatable && isLinesAndAreasAnimatable;
+}
+
+export function isAllSeriesDeselected(legendItems: Map<string, LegendItem>): boolean {
+  for (const [, legendItem] of legendItems) {
+    if (legendItem.isSeriesVisible) {
+      return false;
+    }
+  }
+  return true;
 }
