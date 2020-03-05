@@ -93,6 +93,7 @@ export function computeAxisTicksDimensions(
     axisConfig,
     tickLabelPadding,
     axisSpec.tickLabelRotation,
+    axisSpec.duplicateTicks,
     {
       timeZone: xDomain.timeZone,
     },
@@ -138,6 +139,7 @@ export function getScaleForAxisSpec(
       range,
       ticks: axisSpec.ticks,
       integersOnly: axisSpec.integersOnly,
+      duplicateTicks: axisSpec.duplicateTicks,
     });
     if (yScales.has(axisSpec.groupId)) {
       return yScales.get(axisSpec.groupId)!;
@@ -152,6 +154,7 @@ export function getScaleForAxisSpec(
       enableHistogramMode,
       ticks: axisSpec.ticks,
       integersOnly: axisSpec.integersOnly,
+      duplicateTicks: axisSpec.duplicateTicks,
     });
   }
 }
@@ -213,14 +216,20 @@ export function computeTickDimensions(
   axisConfig: AxisConfig,
   tickLabelPadding: number,
   tickLabelRotation = 0,
+  duplicateTicks: boolean = false,
   tickFormatOptions?: TickFormatterOptions,
 ) {
   const tickValues = scale.ticks();
-  const tickLabels = removeDupeTickLabels(tickValues, tickFormat, tickFormatOptions);
+  const duplicateTickLabels = tickValues.map((d) => {
+    return tickFormat(d, tickFormatOptions);
+  });
+  const tickLabels = duplicateTicks
+    ? duplicateTickLabels
+    : duplicateTickLabels.filter((value, index) => duplicateTickLabels.indexOf(value) === index);
   const {
     tickLabelStyle: { fontFamily, fontSize },
   } = axisConfig;
-
+  console.log(tickLabels);
   const {
     maxLabelBboxWidth,
     maxLabelBboxHeight,
@@ -240,19 +249,29 @@ export function computeTickDimensions(
   };
 }
 
-export function removeDupeTickLabels(
-  tickValues: Array<number | string>,
-  tickFormat: TickFormatter,
-  tickFormatOptions?: TickFormatterOptions,
-) {
-  return (
-    tickValues
-      // @ts-ignore
-      .filter((value: any, index: number) => tickValues.indexOf(value) === index)
-      .map((d: any) => {
-        return tickFormat(d, tickFormatOptions);
-      })
-  );
+/**
+ * The Konva api sets the top right corner of a shape as the default origin of rotation.
+ * In order to apply rotation to tick labels while preserving their relative position to the axis,
+ * we compute offsets to apply to the Text element as well as adjust the x/y coordinates to adjust
+ * for these offsets.
+ */
+export function centerRotationOrigin(
+  axisTicksDimensions: {
+    maxLabelBboxWidth: number;
+    maxLabelBboxHeight: number;
+    maxLabelTextWidth: number;
+    maxLabelTextHeight: number;
+  },
+  coordinates: { x: number; y: number },
+): { x: number; y: number; offsetX: number; offsetY: number } {
+  const { maxLabelBboxWidth, maxLabelBboxHeight, maxLabelTextWidth, maxLabelTextHeight } = axisTicksDimensions;
+
+  const offsetX = maxLabelTextWidth / 2;
+  const offsetY = maxLabelTextHeight / 2;
+  const x = coordinates.x + maxLabelBboxWidth / 2;
+  const y = coordinates.y + maxLabelBboxHeight / 2;
+
+  return { offsetX, offsetY, x, y };
 }
 
 /**

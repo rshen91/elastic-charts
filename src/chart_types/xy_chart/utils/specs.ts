@@ -507,6 +507,8 @@ export interface AxisSpec extends Spec {
   style?: AxisStyle;
   /** Show only integar values **/
   integersOnly?: boolean;
+  /** Show duplicate tick values default to false */
+  duplicateTicks?: boolean;
 }
 
 export type TickFormatterOptions = {
